@@ -1,0 +1,36 @@
+:root {
+  --bg: #0f1115;
+  --surface: #171a21;
+  --surface-2: #1f232c;
+  --border: #2a2e38;
+  --text: #e7e9ee;
+  --text-muted: #9aa0ab;
+  --accent: #4f8ef7;
+  --blue: #3b82f6;
+  --blue-bg: #16233f;
+  --green: #34d399;
+  --green-bg: #103328;
+  --red: #f87171;
+  --red-bg: #3a1717;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+input,
+select {
+  font-family: inherit;
+}
