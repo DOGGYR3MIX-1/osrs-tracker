@@ -22,12 +22,13 @@ export default function Home() {
 
   const activity = activities.find((a) => a.id === selectedId) || null;
 
-  const loadActivities = useCallback(async () => {
+  const loadActivities = useCallback(async (preferId?: string) => {
     const { data } = await supabase.from("activities").select("*").order("name");
     setActivities(data || []);
 
     const remembered =
-      typeof window !== "undefined" ? window.localStorage.getItem(LAST_ACTIVITY_KEY) : null;
+      preferId ||
+      (typeof window !== "undefined" ? window.localStorage.getItem(LAST_ACTIVITY_KEY) : null);
     const stillExists = data?.some((a) => a.id === remembered);
 
     if (remembered && stillExists) {
@@ -35,6 +36,10 @@ export default function Home() {
     } else if (data && data.length > 0) {
       setSelectedId(data[0].id);
     } else {
+      setSelectedId(null);
+      setRuns([]);
+      setFields([]);
+      setFieldValues([]);
       setLoading(false);
     }
   }, []);
@@ -114,6 +119,10 @@ export default function Home() {
             selectedId={selectedId}
             onChange={setSelectedId}
             onNew={() => setNewActivityOpen(true)}
+            onDeleted={() => {
+              window.localStorage.removeItem(LAST_ACTIVITY_KEY);
+              void loadActivities();
+            }}
           />
         ) : (
           <h1 style={{ fontSize: 22, fontWeight: 500, margin: 0 }}>
@@ -126,15 +135,32 @@ export default function Home() {
         {runs.length} run{runs.length === 1 ? "" : "s"} logged
       </p>
 
+      {activities.length === 0 && !loading && (
+        <button
+          onClick={() => setNewActivityOpen(true)}
+          style={{
+            marginTop: 16,
+            padding: "10px 16px",
+            borderRadius: 8,
+            border: "1px solid var(--accent)",
+            background: "var(--accent)",
+            color: "#fff",
+          }}
+        >
+          Create your first activity
+        </button>
+      )}
+
       {loading ? (
         <p style={{ color: "var(--text-muted)" }}>Loading...</p>
       ) : activity ? (
-        <RunsTable runs={runs} fields={fields} fieldValues={fieldValues} />
-      ) : (
-        <p style={{ color: "var(--text-muted)", marginTop: 24 }}>
-          Use the dropdown above to create your first activity.
-        </p>
-      )}
+        <RunsTable
+          runs={runs}
+          fields={fields}
+          fieldValues={fieldValues}
+          onDeleted={() => void loadRunsForActivity(activity.id)}
+        />
+      ) : null}
 
       {wizardOpen && activity && (
         <RunWizard
@@ -154,8 +180,7 @@ export default function Home() {
           onClose={() => setNewActivityOpen(false)}
           onCreated={async (newId) => {
             setNewActivityOpen(false);
-            await loadActivities();
-            setSelectedId(newId);
+            await loadActivities(newId);
           }}
         />
       )}
