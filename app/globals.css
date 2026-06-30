@@ -12,6 +12,10 @@
   --green-bg: #103328;
   --red: #f87171;
   --red-bg: #3a1717;
+  --amber: #fbbf24;
+  --amber-bg: #3a2e10;
+  --gray: #9aa0ab;
+  --gray-bg: #23262d;
 }
 
 * {
