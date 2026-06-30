@@ -1,24 +1,23 @@
 "use client";
 
+import { useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
 import type { ActivityField, Run, RunFieldValue } from "@/lib/types";
 
 type Props = {
   runs: Run[];
   fields: ActivityField[];
   fieldValues: RunFieldValue[];
-};
-
-const OUTCOME_STYLE: Record<string, { bg: string; label: string }> = {
-  T: { bg: "var(--blue-bg)", label: "Teleported" },
-  S: { bg: "var(--green-bg)", label: "Survived" },
-  D: { bg: "var(--red-bg)", label: "Died" },
+  onDeleted: () => void;
 };
 
 function fmtGp(n: number) {
   return n.toLocaleString();
 }
 
-export default function RunsTable({ runs, fields, fieldValues }: Props) {
+export default function RunsTable({ runs, fields, fieldValues, onDeleted }: Props) {
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
   if (runs.length === 0) {
     return (
       <p style={{ color: "var(--text-muted)", marginTop: 24 }}>
@@ -27,8 +26,38 @@ export default function RunsTable({ runs, fields, fieldValues }: Props) {
     );
   }
 
-  function valueFor(runId: string, key: string) {
-    return fieldValues.find((v) => v.run_id === runId && v.field_key === key)?.value ?? 0;
+  function rawValue(runId: string, key: string) {
+    return fieldValues.find((v) => v.run_id === runId && v.field_key === key);
+  }
+
+  // Row color comes from the first 'choice' type field defined for this activity, if any.
+  const colorField = fields.find((f) => f.field_type === "choice");
+
+  function rowBg(runId: string) {
+    if (!colorField) return undefined;
+    const val = rawValue(runId, colorField.key)?.value_text;
+    const choice = colorField.choices?.find((c) => c.value === val);
+    return choice ? `var(--${choice.color}-bg)` : undefined;
+  }
+
+  function displayValue(runId: string, field: ActivityField) {
+    const v = rawValue(runId, field.key);
+    if (!v) return "-";
+    if (field.field_type === "choice") {
+      return field.choices?.find((c) => c.value === v.value_text)?.label || v.value_text || "-";
+    }
+    if (field.field_type === "currency") {
+      return v.value_number != null ? fmtGp(v.value_number) : "-";
+    }
+    return v.value_number ?? "-";
+  }
+
+  async function handleDelete(runId: string) {
+    if (!window.confirm("Delete this run? This can't be undone.")) return;
+    setDeletingId(runId);
+    await supabase.from("runs").delete().eq("id", runId);
+    setDeletingId(null);
+    onDeleted();
   }
 
   return (
@@ -43,36 +72,40 @@ export default function RunsTable({ runs, fields, fieldValues }: Props) {
                 {f.label}
               </th>
             ))}
-            <th style={{ padding: "8px 12px" }}>Loot (gp)</th>
             <th style={{ padding: "8px 12px" }}>Cost (gp)</th>
-            <th style={{ padding: "8px 12px" }}>Profit (gp)</th>
-            <th style={{ padding: "8px 12px" }}>Duration</th>
-            <th style={{ padding: "8px 12px" }}>Outcome</th>
+            <th style={{ padding: "8px 12px" }}></th>
           </tr>
         </thead>
         <tbody>
-          {runs.map((run) => {
-            const style = OUTCOME_STYLE[run.outcome];
-            const profit = run.loot_value - run.cost;
-            return (
-              <tr key={run.id} style={{ background: style.bg }}>
-                <td style={{ padding: "8px 12px" }}>{run.run_number}</td>
-                <td style={{ padding: "8px 12px" }}>{run.run_date}</td>
-                {fields.map((f) => (
-                  <td key={f.key} style={{ padding: "8px 12px" }}>
-                    {valueFor(run.id, f.key)}
-                  </td>
-                ))}
-                <td style={{ padding: "8px 12px" }}>{fmtGp(run.loot_value)}</td>
-                <td style={{ padding: "8px 12px" }}>{fmtGp(run.cost)}</td>
-                <td style={{ padding: "8px 12px", fontWeight: 600 }}>{fmtGp(profit)}</td>
-                <td style={{ padding: "8px 12px" }}>
-                  {run.duration_minutes != null ? `${run.duration_minutes}m` : "-"}
+          {runs.map((run) => (
+            <tr key={run.id} style={{ background: rowBg(run.id) }}>
+              <td style={{ padding: "8px 12px" }}>{run.run_number}</td>
+              <td style={{ padding: "8px 12px" }}>{run.run_date}</td>
+              {fields.map((f) => (
+                <td key={f.key} style={{ padding: "8px 12px" }}>
+                  {displayValue(run.id, f)}
                 </td>
-                <td style={{ padding: "8px 12px" }}>{style.label}</td>
-              </tr>
-            );
-          })}
+              ))}
+              <td style={{ padding: "8px 12px" }}>{fmtGp(run.cost)}</td>
+              <td style={{ padding: "8px 12px" }}>
+                <button
+                  onClick={() => handleDelete(run.id)}
+                  disabled={deletingId === run.id}
+                  aria-label="Delete run"
+                  style={{
+                    border: "1px solid var(--border)",
+                    background: "transparent",
+                    color: "var(--text-muted)",
+                    borderRadius: 8,
+                    padding: "4px 10px",
+                    fontSize: 13,
+                  }}
+                >
+                  {deletingId === run.id ? "..." : "Delete"}
+                </button>
+              </td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
