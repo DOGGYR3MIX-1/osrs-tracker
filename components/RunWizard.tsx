@@ -12,14 +12,6 @@ type Props = {
   onSaved: () => void;
 };
 
-type CoreStep = { key: string; label: string; kind: "number" | "date" | "choice" };
-
-const OUTCOME_OPTIONS = [
-  { v: "T", label: "Teleported out" },
-  { v: "S", label: "Survived" },
-  { v: "D", label: "Died" },
-];
-
 export default function RunWizard({
   activity,
   fields,
@@ -27,13 +19,7 @@ export default function RunWizard({
   onClose,
   onSaved,
 }: Props) {
-  // Steps = the dynamic per-activity fields, then loot value, duration, outcome.
-  const steps: CoreStep[] = [
-    ...fields.map((f) => ({ key: f.key, label: f.label, kind: "number" as const })),
-    { key: "loot_value", label: "Loot value (gp)", kind: "number" },
-    { key: "duration_minutes", label: "Duration (minutes)", kind: "number" },
-    { key: "outcome", label: "Outcome", kind: "choice" },
-  ];
+  const steps = fields; // run # and date are automatic, everything else comes from activity_fields
 
   const [stepIndex, setStepIndex] = useState(0);
   const [values, setValues] = useState<Record<string, string>>({});
@@ -49,7 +35,11 @@ export default function RunWizard({
   }
 
   function skip() {
-    setValue(step.key, step.kind === "choice" ? "S" : "0");
+    if (step.field_type === "choice") {
+      setValue(step.key, step.choices?.[0]?.value || "");
+    } else {
+      setValue(step.key, "0");
+    }
     advance();
   }
 
@@ -69,16 +59,14 @@ export default function RunWizard({
     setSaving(true);
     setError(null);
 
-    const loot = Number(values["loot_value"] || 0);
-    const duration = values["duration_minutes"] ? Number(values["duration_minutes"]) : null;
-    const outcome = (values["outcome"] || "S") as "T" | "S" | "D";
-
-    // Auto-calculate cost from field values * cost_per_unit
     let cost = 0;
     const fieldEntries = fields.map((f) => {
+      if (f.field_type === "choice") {
+        return { field_key: f.key, value_number: null, value_text: values[f.key] || null };
+      }
       const amount = Number(values[f.key] || 0);
       cost += amount * (f.cost_per_unit || 0);
-      return { field_key: f.key, value: amount };
+      return { field_key: f.key, value_number: amount, value_text: null };
     });
 
     const { data: run, error: runError } = await supabase
@@ -86,10 +74,7 @@ export default function RunWizard({
       .insert({
         activity_id: activity.id,
         run_number: nextRunNumber,
-        loot_value: loot,
         cost,
-        duration_minutes: duration,
-        outcome,
       })
       .select()
       .single();
@@ -100,19 +85,64 @@ export default function RunWizard({
       return;
     }
 
-    const { error: fieldsError } = await supabase
-      .from("run_field_values")
-      .insert(fieldEntries.map((f) => ({ run_id: run.id, ...f })));
+    if (fieldEntries.length > 0) {
+      const { error: fieldsError } = await supabase
+        .from("run_field_values")
+        .insert(fieldEntries.map((f) => ({ run_id: run.id, ...f })));
 
-    if (fieldsError) {
-      setError(fieldsError.message);
-      setSaving(false);
-      return;
+      if (fieldsError) {
+        setError(fieldsError.message);
+        setSaving(false);
+        return;
+      }
     }
 
     setSaving(false);
     setDone(true);
     onSaved();
+  }
+
+  if (steps.length === 0) {
+    return (
+      <div
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.55)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 50,
+        }}
+      >
+        <div
+          style={{
+            background: "var(--surface)",
+            border: "1px solid var(--border)",
+            borderRadius: 16,
+            width: 360,
+            padding: 24,
+            textAlign: "center",
+          }}
+        >
+          <p style={{ marginBottom: 16 }}>
+            This activity has no fields defined yet besides run # and date.
+          </p>
+          <button
+            onClick={onClose}
+            style={{
+              padding: "10px 20px",
+              borderRadius: 8,
+              border: "1px solid var(--border)",
+              background: "var(--surface-2)",
+              color: "var(--text)",
+            }}
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -175,9 +205,12 @@ export default function RunWizard({
 
             <label style={{ display: "block", fontSize: 16, fontWeight: 500, marginBottom: 12 }}>
               {step.label}
+              {step.unit ? (
+                <span style={{ color: "var(--text-muted)", fontWeight: 400 }}> ({step.unit})</span>
+              ) : null}
             </label>
 
-            {step.kind === "number" && (
+            {(step.field_type === "number" || step.field_type === "currency") && (
               <input
                 type="number"
                 autoFocus
@@ -195,22 +228,22 @@ export default function RunWizard({
               />
             )}
 
-            {step.kind === "choice" && (
+            {step.field_type === "choice" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {OUTCOME_OPTIONS.map((opt) => (
+                {(step.choices || []).map((opt) => (
                   <button
-                    key={opt.v}
-                    onClick={() => setValue("outcome", opt.v)}
+                    key={opt.value}
+                    onClick={() => setValue(step.key, opt.value)}
                     style={{
                       textAlign: "left",
                       padding: "10px 14px",
                       borderRadius: 8,
                       border:
-                        values["outcome"] === opt.v
+                        values[step.key] === opt.value
                           ? "1px solid var(--accent)"
                           : "1px solid var(--border)",
                       background:
-                        values["outcome"] === opt.v ? "var(--surface-2)" : "transparent",
+                        values[step.key] === opt.value ? "var(--surface-2)" : "transparent",
                       color: "var(--text)",
                     }}
                   >
